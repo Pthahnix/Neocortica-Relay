@@ -94,10 +94,23 @@ class TaskExecutor extends EventEmitter {
 
     // Create ProcessManager and spawn CC
     const allowedTools = payload.allowedTools ?? [...ALLOWED_TOOLS_WHITELIST];
+
+    // Merge modelConfig into envConfig for CC process
+    const envConfig: Record<string, string> = { ...payload.envConfig };
+    if (payload.modelConfig.apiKey) {
+      envConfig.ANTHROPIC_API_KEY = payload.modelConfig.apiKey;
+    }
+    if (payload.modelConfig.baseUrl) {
+      envConfig.ANTHROPIC_BASE_URL = payload.modelConfig.baseUrl;
+    }
+    if (payload.modelConfig.model) {
+      envConfig.ANTHROPIC_MODEL = payload.modelConfig.model;
+    }
+
     this.pm = new ProcessManager({
       workspaceDir: this.workspaceDir,
       allowedTools,
-      envConfig: payload.envConfig,
+      envConfig,
       stallTimeoutMs: payload.stallTimeoutMs,
     });
 
