@@ -45,8 +45,9 @@ Ensures local environment and parameters are ready before any remote operation.
 ```ts
 interface TeleportContext {
   host: string
-  port: number
+  port: number             // default: 22
   sessionId: string
+  ccVersion: string        // extracted from source JSONL (e.g. "2.1.78")
   projectDir: string       // local project path
   workspaceDir: string     // remote workspace path
   sessionPath: string      // local JSONL file path
@@ -86,13 +87,13 @@ Both succeed → skip, print "Pod already provisioned".
    - `ANTHROPIC_AUTH_TOKEN`
    - `ANTHROPIC_MODEL`
    - `PATH` with `$HOME/.local/bin`
-6. Skip first-run wizard: write onboarding completion marker to `/home/cc/.claude/`
+6. Skip first-run wizard: write onboarding completion marker to `/home/cc/.claude/` (exact marker file TBD — investigate during implementation what CC checks to skip the setup wizard)
 7. Copy SSH authorized_keys to cc user:
    ```bash
    mkdir -p /home/cc/.ssh && cp /root/.ssh/authorized_keys /home/cc/.ssh/ && chown -R cc:cc /home/cc/.ssh
    ```
 
-**API credential source**: Read local `.env` file (project root). Parse `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`. Fallback to `process.env`. Error if none found.
+**API credential source**: Read local `.env` file (project root) in dotenv-compatible format (`KEY=VALUE`, optional quotes). Parse `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`. Fallback to `process.env`. Error if none found.
 
 **Post-provision**: All subsequent SSH operations use `cc@host` instead of `root@host`.
 
@@ -149,7 +150,7 @@ Injects context information and starts the resumed CC session.
      "uuid": "<generated>",
      "timestamp": "<now>",
      "sessionId": "<sessionId>",
-     "version": "2.1.78"
+     "version": "<from TeleportContext.ccVersion>"
    }
    ```
    Via SSH: `echo '<json>' >> <jsonl-path>`
