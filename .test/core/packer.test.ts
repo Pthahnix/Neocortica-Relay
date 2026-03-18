@@ -4,8 +4,12 @@ import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-import { packSession, unpackSession } from '../../src/core/packer.js'
+const execFileAsync = promisify(execFile)
+
+import { packSession, unpackSession, toPosixPath } from '../../src/core/packer.js'
 import type { SessionMeta } from '../../src/core/types.js'
 
 let tempDir: string
@@ -98,5 +102,42 @@ describe('unpackSession', () => {
       () => unpackSession(fakePath, join(tempDir, 'out')),
       /failed|error/i
     )
+  })
+})
+
+describe('packSession with memory', () => {
+  let ccProjectDir: string
+  let sessionId: string
+  let archivePath: string
+
+  beforeEach(async () => {
+    sessionId = 'memory-session-001'
+    ccProjectDir = join(tempDir, 'cc-project-mem')
+    await mkdir(ccProjectDir, { recursive: true })
+    await writeFile(join(ccProjectDir, `${sessionId}.jsonl`), '{"type":"user"}\n')
+    archivePath = join(tempDir, 'memory-test.tar.gz')
+  })
+
+  it('includes memory directory in archive when present', async () => {
+    const memoryDir = join(ccProjectDir, 'memory')
+    await mkdir(memoryDir, { recursive: true })
+    await writeFile(join(memoryDir, 'MEMORY.md'), '# Test Memory\nSome notes')
+    await writeFile(join(memoryDir, 'patterns.md'), '# Patterns')
+
+    const result = await packSession(ccProjectDir, sessionId, archivePath, '/test/project')
+
+    const verifyDir = join(tempDir, 'verify')
+    await mkdir(verifyDir, { recursive: true })
+    await execFileAsync('tar', ['xzf', toPosixPath(result.archivePath), '-C', toPosixPath(verifyDir)])
+
+    assert.ok(existsSync(join(verifyDir, 'memory', 'MEMORY.md')))
+    assert.ok(existsSync(join(verifyDir, 'memory', 'patterns.md')))
+    const content = await readFile(join(verifyDir, 'memory', 'MEMORY.md'), 'utf-8')
+    assert.ok(content.includes('Test Memory'))
+  })
+
+  it('packs successfully when memory directory does not exist', async () => {
+    const result = await packSession(ccProjectDir, sessionId, archivePath, '/test/project')
+    assert.ok(existsSync(result.archivePath))
   })
 })

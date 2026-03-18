@@ -92,6 +92,14 @@ export async function packSession(
     await copyDirContents(toolResultsDir, targetToolDir)
   }
 
+  // Copy memory directory if exists
+  const memoryDir = join(ccProjectDir, 'memory')
+  if (existsSync(memoryDir)) {
+    const targetMemDir = join(stageDir, 'memory')
+    await mkdir(targetMemDir, { recursive: true })
+    await copyDirContents(memoryDir, targetMemDir)
+  }
+
   // Write metadata
   await writeFile(join(stageDir, 'metadata.json'), JSON.stringify(meta, null, 2))
 
