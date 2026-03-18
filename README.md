@@ -1,4 +1,4 @@
-# neocortica-session
+# Neocortica-Session
 
 CC session sharing for distributed experiment execution. Export a Claude Code session (with full research context from Stages 1-4), transfer it to a remote GPU pod, resume it there, and return results.
 
@@ -44,7 +44,7 @@ Add to your `.mcp.json`:
     "neocortica-session": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/path/to/neocortica-relay"
+      "cwd": "/path/to/Neocortica-Session"
     }
   }
 }
