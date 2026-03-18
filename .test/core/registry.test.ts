@@ -182,3 +182,48 @@ describe('listSessions', () => {
     assert.equal(sessions.length, 0)
   })
 })
+
+describe('listSessions fallback', () => {
+  it('scans .jsonl files when index is missing', async () => {
+    await writeFile(join(tempDir, 'session-old.jsonl'), '{"type":"user","message":{"content":"old"}}\n')
+    await new Promise(r => setTimeout(r, 50))
+    await writeFile(join(tempDir, 'session-new.jsonl'), '{"type":"user","message":{"content":"new"}}\n')
+
+    const sessions = await listSessions(tempDir)
+    assert.ok(sessions.length >= 2)
+    assert.equal(sessions[0].sessionId, 'session-new')
+  })
+
+  it('scans .jsonl files when index has empty entries', async () => {
+    await writeFile(join(tempDir, 'sessions-index.json'), JSON.stringify({ version: 1, entries: [] }))
+    await writeFile(join(tempDir, 'abc-123.jsonl'), '{"type":"user","message":{"content":"hello"}}\n')
+
+    const sessions = await listSessions(tempDir)
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].sessionId, 'abc-123')
+  })
+
+  it('prefers index entries when index is populated', async () => {
+    const index = {
+      version: 1,
+      entries: [{
+        sessionId: 'from-index',
+        fullPath: join(tempDir, 'from-index.jsonl'),
+        fileMtime: Date.now(),
+        firstPrompt: 'indexed',
+        messageCount: 5,
+        created: '2026-03-18T00:00:00Z',
+        modified: '2026-03-18T00:00:00Z',
+        projectPath: '/workspace',
+        isSidechain: false,
+      }],
+    }
+    await writeFile(join(tempDir, 'sessions-index.json'), JSON.stringify(index))
+    await writeFile(join(tempDir, 'from-index.jsonl'), '{"type":"user"}\n')
+
+    const sessions = await listSessions(tempDir)
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].sessionId, 'from-index')
+    assert.equal(sessions[0].firstPrompt, 'indexed')
+  })
+})

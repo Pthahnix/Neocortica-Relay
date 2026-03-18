@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, cp } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, cp, stat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 
@@ -106,5 +106,52 @@ export async function listSessions(
   ccProjectDir: string
 ): Promise<SessionIndexEntry[]> {
   const index = await loadIndex(ccProjectDir)
-  return index.entries
+  if (index.entries.length > 0) return index.entries
+
+  // Fallback: scan .jsonl files by mtime
+  return scanJsonlFiles(ccProjectDir)
+}
+
+async function scanJsonlFiles(dir: string): Promise<SessionIndexEntry[]> {
+  if (!existsSync(dir)) return []
+
+  const entries = await readdir(dir)
+  const jsonlFiles = entries.filter(f => f.endsWith('.jsonl'))
+
+  const results: SessionIndexEntry[] = []
+  for (const file of jsonlFiles) {
+    const filePath = join(dir, file)
+    const fileStat = await stat(filePath)
+    const sessionId = file.replace('.jsonl', '')
+
+    let firstPrompt = '[scanned session]'
+    try {
+      const content = await readFile(filePath, 'utf-8')
+      const firstLine = content.split('\n')[0]
+      if (firstLine) {
+        const record = JSON.parse(firstLine)
+        if (record.message?.content) {
+          const text = typeof record.message.content === 'string'
+            ? record.message.content
+            : JSON.stringify(record.message.content)
+          firstPrompt = text.slice(0, 100)
+        }
+      }
+    } catch { /* ignore */ }
+
+    results.push({
+      sessionId,
+      fullPath: filePath,
+      fileMtime: fileStat.mtimeMs,
+      firstPrompt,
+      messageCount: 0,
+      created: fileStat.birthtime.toISOString(),
+      modified: fileStat.mtime.toISOString(),
+      projectPath: '',
+      isSidechain: false,
+    })
+  }
+
+  results.sort((a, b) => b.fileMtime - a.fileMtime)
+  return results
 }
