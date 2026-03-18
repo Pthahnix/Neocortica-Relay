@@ -82,7 +82,7 @@ export async function sessionReturn(
   console.log(`[return] Importing session locally...`)
   const unpackDir = join(tmpdir(), `neocortica-return-unpack-${Date.now()}`)
   await mkdir(unpackDir, { recursive: true })
-  await execFileAsync('tar', ['xzf', localArchive, '-C', unpackDir])
+  await execFileAsync('tar', ['xzf', localArchive, '--no-same-owner', '-C', unpackDir])
 
   // Create synthetic metadata.json (pod archive doesn't include one)
   const meta: SessionMeta = {

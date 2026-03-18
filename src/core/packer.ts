@@ -111,7 +111,7 @@ export async function unpackSession(
   await mkdir(tempDir, { recursive: true })
 
   try {
-    await execFileAsync('tar', ['xzf', toPosixPath(archivePath), '-C', toPosixPath(tempDir)])
+    await execFileAsync('tar', ['xzf', toPosixPath(archivePath), '--no-same-owner', '-C', toPosixPath(tempDir)])
   } catch (err) {
     throw new Error(`Unpack failed: ${(err as Error).message}`)
   }

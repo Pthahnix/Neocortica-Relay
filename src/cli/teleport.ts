@@ -75,7 +75,7 @@ export function buildRemoteUnpackCommands(
   })
   return [
     `mkdir -p ${ccDir}/${sessionId} /tmp/neocortica-session-unpack`,
-    `tar xzf /tmp/neocortica-session.tar.gz -C /tmp/neocortica-session-unpack`,
+    `tar xzf /tmp/neocortica-session.tar.gz --no-same-owner -C /tmp/neocortica-session-unpack`,
     `cp /tmp/neocortica-session-unpack/${sessionId}.jsonl ${ccDir}/`,
     `[ -d /tmp/neocortica-session-unpack/${sessionId} ] && cp -r /tmp/neocortica-session-unpack/${sessionId}/* ${ccDir}/${sessionId}/ || true`,
     // Generate index with correct fullPath using shell variable expansion for $HOME
