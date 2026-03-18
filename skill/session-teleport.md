@@ -1,18 +1,18 @@
-# Session Teleport — Full Lifecycle SOP
+# Session Teleport — Git-based Context Transfer SOP
 
-Orchestrates exporting a CC session to a remote GPU pod, running experiments with full research context, and returning results.
+Orchestrates deploying a CC research context to a remote GPU pod via Git. No session JSONL transfer — CLAUDE.md + MEMORY provide equivalent durable context.
 
 ## Prerequisites
-- RunPod MCP server configured and working
-- neocortica-session MCP server configured
-- neocortica-session CLI available (`npx tsx src/cli/teleport.ts`)
+- RunPod MCP server configured
+- Experiment repo on GitHub (public or private)
+- Local `.env` with API credentials (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL)
+- For private repos: GitHub PAT available in environment or `.env`
 
 ## Phase 1: Hardware Estimation
 
 1. Read the experiment plan from the current research context
-2. Use `prompt/hardware-estimation.md` to analyze requirements
-3. Estimate: GPU type/count, disk space, estimated cost/hour
-4. Present estimate to user and **wait for confirmation**
+2. Estimate: GPU type/count, disk space, estimated cost/hour
+3. Present estimate to user and **wait for confirmation**
    - If user declines → STOP (no cleanup needed)
 
 ## Phase 2: Pod Creation (RunPod MCP)
@@ -27,89 +27,102 @@ Orchestrates exporting a CC session to a remote GPU pod, running experiments wit
    - `name`: `neocortica-experiment`
 2. Wait for pod status = RUNNING
 3. Extract SSH connection info (host, port)
-4. **Record `podId` for Phase 7 cleanup**
+4. **Record `podId` for cleanup**
    - If pod creation fails → STOP (no cleanup needed)
 
-## Phase 3: Pod Provision (Bash SSH)
+## Phase 3: Context Collection + Push
 
-1. Install Claude Code CLI:
+1. Copy local CC memory files to repo:
    ```bash
-   ssh <pod-ssh> "curl -fsSL https://claude.ai/install.sh | bash"
+   # Compute local project hash (Windows: D:\path → D--path)
+   cp ~/.claude/projects/<project-hash>/memory/* ./memory/
    ```
-2. Install Node.js 22 (if experiment needs it):
+2. Commit and push:
    ```bash
-   ssh <pod-ssh> "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs"
+   git add memory/
+   git commit -m "sync: context for pod deployment"
+   git push
    ```
-3. Configure CC settings (allowedTools, permissions)
-4. Create workspace: `ssh <pod-ssh> "mkdir -p /workspace/experiment"`
-5. **Transfer project configuration**:
-   ```bash
-   scp CLAUDE.md <pod-ssh>:/workspace/
-   scp .claude/settings.json <pod-ssh>:/workspace/.claude/
-   scp .mcp.json <pod-ssh>:/workspace/  # if applicable
-   ```
-   CC reads these from CWD — without them the resumed session lacks project instructions.
-6. Set `ANTHROPIC_API_KEY` on the pod (required for CC):
-   ```bash
-   ssh <pod-ssh> "echo 'export ANTHROPIC_API_KEY=...' >> ~/.bashrc"
-   ```
-   - If provision fails → go to Phase 7 (cleanup)
+   - If no memory files exist, skip copy — CLAUDE.md alone provides context
 
-## Phase 4: Session Teleport
+## Phase 4: Provision (SSH — smart detection + per-need scripts)
 
-1. Call MCP `session_export` → generate archive
-2. Call CLI teleport:
-   ```bash
-   npx tsx src/cli/teleport.ts <pod-ssh> <archive-path>
-   ```
-   This performs: local remap → scp → unpack → tmux CC
-   - If teleport fails → go to Phase 7 (cleanup)
+SSH into the pod and detect what's present, then execute only what's needed.
+
+### Step 1: Detection
+```bash
+ssh -p <port> root@<host> "node --version 2>/dev/null; id cc 2>/dev/null; echo '---'"
+```
+
+### Step 2: Install Node.js (if missing or < v22)
+```bash
+scp -P <port> scripts/install-node.sh root@<host>:/tmp/
+ssh -p <port> root@<host> "bash /tmp/install-node.sh"
+```
+
+### Step 3: Create cc user (if missing)
+```bash
+scp -P <port> scripts/create-cc-user.sh root@<host>:/tmp/
+ssh -p <port> root@<host> "bash /tmp/create-cc-user.sh"
+```
+
+### Step 4: Install Claude Code (if missing)
+```bash
+scp -P <port> scripts/install-cc.sh root@<host>:/tmp/
+ssh -p <port> root@<host> "bash /tmp/install-cc.sh"
+```
+
+### Step 5: Configure API credentials
+```bash
+scp -P <port> scripts/setup-env.sh root@<host>:/tmp/
+ssh -p <port> root@<host> "bash /tmp/setup-env.sh '<BASE_URL>' '<AUTH_TOKEN>' '<MODEL>'"
+```
+Read credentials from local `.env` file.
+
+### Step 6: Configure bypassPermissions
+```bash
+ssh -p <port> root@<host> "mkdir -p /home/cc/.claude && cat > /home/cc/.claude/settings.json << 'SETTINGSEOF'
+{
+  \"permissions\": {
+    \"defaultMode\": \"bypassPermissions\"
+  }
+}
+SETTINGSEOF
+chown -R cc:cc /home/cc/.claude"
+```
+
+### Step 7: Configure GitHub auth (private repos only)
+```bash
+ssh -p <port> root@<host> "su - cc -c 'git config --global credential.helper store && echo \"https://<PAT>@github.com\" > /home/cc/.git-credentials'"
+```
+
+### Step 8: Deploy context
+```bash
+scp -P <port> scripts/deploy-context.sh root@<host>:/tmp/
+ssh -p <port> root@<host> "bash /tmp/deploy-context.sh '<REPO_URL>' /workspace"
+```
+
+- If any provision step fails → inform user, suggest `session-return` for cleanup
 
 ## Phase 5: Handoff
 
 Output to user:
 ```
-Session teleported to pod <podId>. Connect:
-  ssh <pod-ssh>
-  tmux attach -t neocortica
-
-When done, return to local CC and run:
-  /session-return <pod-ssh>
+Pod ready. Connect:
+  ssh -p <port> cc@<host>
+  cd /workspace/<repo>
+  claude
 ```
 
-## Phase 6: Return (triggered by user after experiment)
-
-1. Call CLI return:
-   ```bash
-   npx tsx src/cli/return.ts <pod-ssh>
-   ```
-   This performs: remote pack → scp → local remap → register
-2. Output resume command: `claude --resume <session-id>`
-   - If return fails → warn user, provide manual scp fallback
-
-## Phase 7: Cleanup (ALWAYS runs if Phase 2 succeeded)
-
-1. `stop-pod(podId)`
-2. `delete-pod(podId)`
-3. Confirm cleanup to user
-   - If cleanup fails → alert user with manual cleanup instructions:
-     ```
-     Manual cleanup needed:
-       1. Go to https://www.runpod.io/console/pods
-       2. Find pod <podId>
-       3. Stop and delete it
-     ```
-
-**Golden rule**: Phase 7 ALWAYS runs if Phase 2 succeeded. No exceptions.
+No tmux, no auto-start. User connects and starts CC themselves.
+CC reads CLAUDE.md from repo root and MEMORY from ~/.claude/projects/<hash>/memory/ automatically.
 
 ## Error Recovery Matrix
 
 | Phase | Failure | Action |
 |-------|---------|--------|
-| 1 | User declines | Stop |
+| 1 | User declines | Stop, no cleanup needed |
 | 2 | Pod creation fails | Stop, no cleanup needed |
-| 3 | Provision fails | Cleanup pod (Phase 7) |
-| 4 | Teleport fails | Cleanup pod (Phase 7) |
-| 5 | User can't connect | Troubleshoot, cleanup if unresolvable |
-| 6 | Return fails | Warn, manual scp fallback |
-| 7 | Cleanup fails | Alert user with manual instructions |
+| 3 | Git push fails | Fix locally, retry. Pod not yet provisioned |
+| 4 | Provision fails | Inform user, suggest session-return for cleanup |
+| 5 | User can't connect | Troubleshoot SSH, cleanup if unresolvable |

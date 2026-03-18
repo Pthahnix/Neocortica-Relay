@@ -1,23 +1,6 @@
 {
   "name": "neocortica-session",
-  "version": "0.1.0",
-  "description": "CC session sharing for distributed experiment execution",
-  "type": "module",
-  "scripts": {
-    "mcp": "tsx src/mcp/server.ts",
-    "teleport": "tsx src/cli/teleport.ts",
-    "return": "tsx src/cli/return.ts",
-    "test": "tsx --test .test/**/*.test.ts",
-    "build": "tsc"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/node": "^25.3.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  },
+  "version": "2.0.0",
+  "description": "Git-based context transfer for distributed experiment execution",
   "license": "Apache-2.0"
 }
